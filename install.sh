@@ -123,26 +123,58 @@ for skill_dir in "$SCRIPT_DIR/workspace/skills"/*/; do
 done
 success "Skills installed"
 
+# ─── Agent workspaces ─────────────────────────
+step "Installing agent workspaces..."
+
+OPENCLAW_HOME="$(dirname "$WORKSPACE")"
+
+for agent in sot-scribe sot-editor; do
+  src="$SCRIPT_DIR/workspace-${agent}"
+  dst="$OPENCLAW_HOME/workspace-${agent}"
+  if [[ ! -d "$src" ]]; then
+    warn "workspace-${agent} not found in sot-starter — skipping"
+    continue
+  fi
+  mkdir -p "$dst"
+  for f in IDENTITY.md SOUL.md AGENTS.md; do
+    if [[ -f "$src/$f" ]]; then
+      if [[ -f "$dst/$f" ]]; then
+        warn "${agent}/$f already exists — skipping"
+      else
+        cp "$src/$f" "$dst/$f"
+        info "Installed workspace-${agent}/$f"
+      fi
+    fi
+  done
+done
+success "Agent workspaces installed"
+
 # ─── openclaw.json patch ──────────────────────
 step "Patching openclaw.json..."
 
 PATCH_SCRIPT=$(cat <<'PYEOF'
-import json, sys
+import json, sys, re
 
-config_path = sys.argv[1]
-patch_path  = sys.argv[2]
+config_path  = sys.argv[1]
+patch_path   = sys.argv[2]
+openclaw_home = sys.argv[3]
 
 with open(config_path) as f:
     config = json.load(f)
 with open(patch_path) as f:
-    patch = json.load(f)
+    # Substitute {{OPENCLAW_HOME}} placeholder before parsing
+    raw = f.read().replace("{{OPENCLAW_HOME}}", openclaw_home)
+    patch = json.loads(raw)
 
 # Remove meta comment key if present
 patch.pop("_comment", None)
 
 def deep_merge(base, overlay):
     for k, v in overlay.items():
-        if k in base and isinstance(base[k], dict) and isinstance(v, dict):
+        # For agents.list: replace the whole array (not element-merge)
+        if k == "list" and isinstance(v, list):
+            base[k] = v
+        elif k in base and isinstance(base[k], dict) and isinstance(v, dict):
             deep_merge(base[k], v)
         else:
             base[k] = v
@@ -150,7 +182,7 @@ def deep_merge(base, overlay):
 deep_merge(config, patch)
 
 # Inject Anthropic key if provided
-anthropic_key = sys.argv[3] if len(sys.argv) > 3 else ""
+anthropic_key = sys.argv[4] if len(sys.argv) > 4 else ""
 if anthropic_key:
     config.setdefault("auth", {}).setdefault("profiles", {}) \
         .setdefault("anthropic:default", {})["apiKey"] = anthropic_key
@@ -161,7 +193,7 @@ print("Patch applied")
 PYEOF
 )
 
-python3 -c "$PATCH_SCRIPT" "$OPENCLAW_CONFIG" "$SCRIPT_DIR/config/openclaw.patch.json" "$ANTHROPIC_KEY"
+python3 -c "$PATCH_SCRIPT" "$OPENCLAW_CONFIG" "$SCRIPT_DIR/config/openclaw.patch.json" "$OPENCLAW_HOME" "$ANTHROPIC_KEY"
 success "openclaw.json patched"
 
 # ─── c3x binary ───────────────────────────────
@@ -252,9 +284,14 @@ echo -e "  Workspace : ${BOLD}$WORKSPACE${RESET}"
 echo -e "  Skills    : c3, prev-cli, sot-manager, project-adopt,"
 echo -e "              get-api-docs, qmd, skill-creator-ultra"
 echo ""
+echo -e "  Board agents:"
+echo -e "    ${BOLD}board${RESET}       — discussion host (auto, every board session)"
+echo -e "    ${BOLD}sot-scribe${RESET}  — insight collector + SOT generator (@sot-scribe)"
+echo -e "    ${BOLD}sot-editor${RESET}  — targeted artifact editor (annotation threads)"
+echo ""
 echo -e "  ${YELLOW}Next steps:${RESET}"
 echo -e "  1. Edit ${BOLD}$WORKSPACE/USER.md${RESET} — tell the agent about yourself"
 echo -e "  2. Edit ${BOLD}$WORKSPACE/SOUL.md${RESET} — customise the persona"
 echo -e "  3. Start a docs server: ${BOLD}bun dist/cli.js -c /path/to/docs -p 3001${RESET}"
-echo -e "  4. Chat with your agent via Telegram/Signal to verify"
+echo -e "  4. Open a board, start discussing, tag @sot-scribe when ready to generate"
 echo ""
