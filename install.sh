@@ -76,7 +76,7 @@ echo ""
 
 GITHUB_PAT=$(read_secret  "  GitHub PAT (leave blank to skip): ")
 GITHUB_USER=$(read_input  "  GitHub username (leave blank to skip): ")
-ANTHROPIC_KEY=$(read_secret "  Anthropic API key (leave blank to skip): ")
+ANTHROPIC_KEY=""  # Already configured via 'openclaw configure' — not needed here
 
 echo ""
 
